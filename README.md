@@ -1,19 +1,19 @@
-# Mandelbrot — CUDA + MPI (OpenMP track reserved)
+# Mandelbrot — CUDA + MPI (OpenMP track in progress)
 
-A Mandelbrot set renderer parallelized across multiple paradigms for an HPC lab assignment. The original CUDA implementation is preserved untouched; **Part A** adds a shared CPU algorithm core plus pure-MPI and hybrid MPI+CUDA executables. **Part B** (OpenMP + unified benchmark) is left for a separate contributor — see `plan_partB.md`.
+A Mandelbrot set renderer parallelized across multiple paradigms for an HPC lab assignment. **Part A** delivers the CUDA renderer, the shared CPU algorithm core, and pure-MPI plus hybrid MPI+CUDA executables. **Part B** (OpenMP + unified benchmark + code polish) is being implemented separately — see `plan_partB.md`.
 
 ## Status
 
-| Track | Status | Owner |
-|---|---|---|
-| CUDA renderer + SDL2 viewer | ✅ Done (original, untouched) | original repo |
-| Shared algorithm core (`mandelbrot_core.hpp`) | ✅ Done | Part A |
-| Pure MPI with block-cyclic distribution | ✅ Done | Part A |
-| Hybrid MPI + CUDA | ✅ Done | Part A |
-| Scaling + load-imbalance study | ✅ Done | Part A |
-| OpenMP implementation | ⏳ TODO | Part B |
-| Unified Serial / OpenMP / CUDA benchmark | ⏳ TODO | Part B |
-| Code-polish fixes (return-bug, color-table caching) | ⏳ TODO | Part B |
+| Track | Status |
+|---|---|
+| CUDA renderer + SDL2 viewer | ✅ Done |
+| Shared algorithm core (`mandelbrot_core.hpp`) | ✅ Done — Part A |
+| Pure MPI with block-cyclic distribution | ✅ Done — Part A |
+| Hybrid MPI + CUDA | ✅ Done — Part A |
+| Scaling + load-imbalance study | ✅ Done — Part A |
+| OpenMP implementation | ⏳ Part B |
+| Unified Serial / OpenMP / CUDA benchmark | ⏳ Part B |
+| Code-polish fixes (return-bug, color-table caching) | ⏳ Part B |
 
 ## Highlight results (Part A)
 
@@ -43,10 +43,10 @@ Full numbers in [`docs/report_partA.md`](docs/report_partA.md).
 
 | Executable | Purpose |
 |---|---|
-| `mandelbrot` | Interactive SDL2 viewer (CUDA, original) |
-| `benchmark` | CPU vs GPU benchmark (original; CPU path is single-thread, simplified) |
+| `mandelbrot` | Interactive SDL2 viewer (CUDA) |
+| `benchmark` | CPU vs GPU benchmark |
 | `mandelbrot_mpi` | Distributed CPU renderer with block-cyclic / contiguous row distribution |
-| `mandelbrot_mpi_cuda` | Distributed orchestration around the unchanged CUDA kernel |
+| `mandelbrot_mpi_cuda` | Distributed orchestration around the CUDA kernel |
 
 ## Prerequisites
 
@@ -69,7 +69,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-CMake skips the MPI targets gracefully if MPI isn't found, so the original `mandelbrot` and `benchmark` still build on machines without MPI.
+CMake skips the MPI targets gracefully if MPI isn't found, so `mandelbrot` and `benchmark` still build on machines without MPI.
 
 ## Run
 
@@ -81,7 +81,7 @@ CMake skips the MPI targets gracefully if MPI isn't found, so the original `mand
 
 Left-click + drag to pan, scroll to zoom.
 
-### Original CPU vs GPU benchmark
+### CPU vs GPU benchmark
 
 ```bash
 ./build/benchmark
@@ -108,7 +108,7 @@ CLI flags: `--shallow` / `--deep`, `--width W`, `--height H`, `--chunk K`, `--co
 mpirun -np 2 --oversubscribe ./build/mandelbrot_mpi_cuda --shallow
 ```
 
-**Caveat:** because the existing CUDA function renders the entire image in one kernel launch (and was kept untouched per the assignment constraint), each rank computes the full image on the shared GPU and keeps only its row strip. This isolates the MPI orchestration cost; it does not produce a speedup on a single-GPU machine. On multi-GPU clusters, `cudaSetDevice(rank % deviceCount)` would give real gains. See the source comments and `docs/report_partA.md` §3.4.
+**Caveat:** because the CUDA function renders the entire image in one kernel launch, each rank computes the full image on the shared GPU and keeps only its row strip. This isolates the MPI orchestration cost; it does not produce a speedup on a single-GPU machine. On multi-GPU clusters, `cudaSetDevice(rank % deviceCount)` would give real gains. See the source comments and `docs/report_partA.md` §3.4.
 
 ## Scripts
 
@@ -133,18 +133,18 @@ bash scripts/test_partA.sh
 .
 ├── CMakeLists.txt
 ├── README.md                          (this file)
-├── plan.md                            (overall combined plan, kept for reference)
-├── plan_partA.md                      (Part A spec — what was implemented)
-├── plan_partB.md                      (Part B spec — for the next contributor)
+├── plan.md                            (overall combined plan)
+├── plan_partA.md                      (Part A spec — implemented)
+├── plan_partB.md                      (Part B spec — in progress)
 ├── include/
-│   ├── mandelbrot.cuh                 (original CUDA header, untouched)
-│   └── mandelbrot_core.hpp            (Part A: shared CPU mirror of CUDA math)
+│   ├── mandelbrot.cuh                 (CUDA header)
+│   └── mandelbrot_core.hpp            (shared CPU mirror of the CUDA math)
 ├── src/
-│   ├── mandelbrot.cu                  (original CUDA kernel, untouched)
-│   ├── main.cpp                       (original SDL viewer, untouched)
-│   ├── benchmark.cpp                  (original benchmark, untouched)
-│   ├── mandelbrot_mpi.cpp             (Part A: pure MPI)
-│   └── mandelbrot_mpi_cuda.cpp        (Part A: hybrid MPI+CUDA)
+│   ├── mandelbrot.cu                  (CUDA kernel)
+│   ├── main.cpp                       (SDL viewer)
+│   ├── benchmark.cpp                  (CPU vs GPU benchmark)
+│   ├── mandelbrot_mpi.cpp             (pure MPI)
+│   └── mandelbrot_mpi_cuda.cpp        (hybrid MPI+CUDA)
 ├── scripts/
 │   ├── run_mpi_strong.sh
 │   ├── run_mpi_imbalance.sh
@@ -189,7 +189,3 @@ for (int y = 0; y < height; y++)
 ```
 
 See `plan_partB.md` for the full Definition of Done.
-
-## License
-
-Same as the original `mandelbrot-cuda` project.

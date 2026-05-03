@@ -1,0 +1,10 @@
+build/
+
+# Test outputs
+*.ppm
+
+# IDE / OS clutter
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

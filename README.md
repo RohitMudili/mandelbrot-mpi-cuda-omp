@@ -1,60 +1,37 @@
-# Mandelbrot — CUDA + MPI (OpenMP track in progress)
+# Mandelbrot: OpenMP + CUDA + MPI
 
-A Mandelbrot set renderer parallelized across multiple paradigms for an HPC lab assignment. **Part A** delivers the CUDA renderer, the shared CPU algorithm core, and pure-MPI plus hybrid MPI+CUDA executables. **Part B** (OpenMP + unified benchmark + code polish) is being implemented separately — see `plan_partB.md`.
+Mandelbrot renderer with serial, OpenMP, CUDA, pure-MPI, and hybrid MPI+CUDA implementations. All paths share one per-pixel algorithm (`include/mandelbrot_core.hpp`) so output matches across implementations to within floating-point ULP.
 
 ## Status
 
 | Track | Status |
 |---|---|
-| CUDA renderer + SDL2 viewer | ✅ Done |
-| Shared algorithm core (`mandelbrot_core.hpp`) | ✅ Done — Part A |
-| Pure MPI with block-cyclic distribution | ✅ Done — Part A |
-| Hybrid MPI + CUDA | ✅ Done — Part A |
-| Scaling + load-imbalance study | ✅ Done — Part A |
-| OpenMP implementation | ⏳ Part B |
-| Unified Serial / OpenMP / CUDA benchmark | ⏳ Part B |
-| Code-polish fixes (return-bug, color-table caching) | ⏳ Part B |
-
-## Highlight results (Part A)
-
-Measured on RTX 3050 Ti Laptop GPU + 4-physical-core CPU, WSL2 Ubuntu 24.04, OpenMPI 3.1.
-
-**Strong scaling, pure MPI, 1920×1080 shallow view:**
-
-| Ranks | Time (ms) | Speedup | Efficiency |
-|---:|---:|---:|---:|
-| 1 | 849 | 1.00× | 100% |
-| 2 | 441 | 1.93× | 96% |
-| 4 | 243 | 3.49× | 87% |
-| 8 | 153 | 5.55× | 69% |
-
-**Load-imbalance study, deep view, 4 ranks:**
-
-| Distribution | Imbalance ratio | Wall time |
-|---|---:|---:|
-| Contiguous rows | 1.35× | 2574 ms |
-| Block-cyclic, chunk=8 | **1.02×** | **2216 ms** (-14%) |
-
-**Visual equivalence:** CPU MPI and GPU MPI outputs differ by 24 bytes out of 1.44 MB (max ±1 ULP per byte). 1-rank vs 4-rank MPI is bit-exact.
-
-Full numbers in [`docs/report_partA.md`](docs/report_partA.md).
+| CUDA renderer + SDL2 viewer | Done |
+| Shared algorithm core (`mandelbrot_core.hpp`) | Done |
+| Serial reference (`mandelbrot_serial`) | Done |
+| OpenMP implementation (`mandelbrot_omp`) | Done |
+| Pure MPI with block-cyclic distribution | Done |
+| Hybrid MPI + CUDA | Done |
+| Unified Serial / OpenMP / CUDA benchmark | Done |
+| MPI strong, weak, and load-imbalance studies | Done |
+| OpenMP strong-scaling and schedule comparison | Done |
+| Code-polish fixes (return-bug, color-table caching) | Done |
 
 ## Targets
 
-| Executable | Purpose |
+| Executable | What it is |
 |---|---|
-| `mandelbrot` | Interactive SDL2 viewer (CUDA) |
-| `benchmark` | CPU vs GPU benchmark |
-| `mandelbrot_mpi` | Distributed CPU renderer with block-cyclic / contiguous row distribution |
+| `mandelbrot` | SDL2 viewer (CUDA) |
+| `mandelbrot_serial` | Single-threaded reference |
+| `mandelbrot_omp` | OpenMP renderer |
+| `mandelbrot_mpi` | Distributed CPU (block-cyclic or contiguous rows) |
 | `mandelbrot_mpi_cuda` | Distributed orchestration around the CUDA kernel |
+| `benchmark` | Serial / OpenMP / CUDA fair benchmark, CSV out |
+| `benchmark_mpi` | MPI benchmark, CSV out |
 
 ## Prerequisites
 
-- CUDA Toolkit 12.x (compute capability 7.5 or 8.6)
-- CMake ≥ 3.18
-- C++17 compiler
-- SDL2 development libraries (for the viewer only)
-- An MPI implementation (OpenMPI tested; MPICH should also work)
+CUDA Toolkit 12.x, CMake 3.18 or newer, a C++17 compiler, OpenMP, an MPI implementation, SDL2 (viewer only).
 
 On Ubuntu 24.04 / WSL2:
 
@@ -69,123 +46,53 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-CMake skips the MPI targets gracefully if MPI isn't found, so `mandelbrot` and `benchmark` still build on machines without MPI.
+MPI targets are skipped if MPI is not found; OpenMP is required.
 
 ## Run
 
-### Interactive viewer (CUDA)
-
 ```bash
-./build/mandelbrot
-```
-
-Left-click + drag to pan, scroll to zoom.
-
-### CPU vs GPU benchmark
-
-```bash
-./build/benchmark
-```
-
-### Pure MPI
-
-```bash
-# 4 ranks, deep zoom, block-cyclic (default chunk=8)
+./build/mandelbrot                                       # SDL viewer
+./build/mandelbrot_serial --deep
+./build/mandelbrot_omp --deep --threads 8
+./build/benchmark --deep --runs 5                        # writes docs/results/benchmark.csv
 mpirun -np 4 --oversubscribe ./build/mandelbrot_mpi --deep
-
-# Same but contiguous row partitioning, for comparison
 mpirun -np 4 --oversubscribe ./build/mandelbrot_mpi --deep --contiguous
-
-# Headless benchmark mode
-mpirun -np 8 --oversubscribe ./build/mandelbrot_mpi --shallow --no-output --runs 5
-```
-
-CLI flags: `--shallow` / `--deep`, `--width W`, `--height H`, `--chunk K`, `--contiguous`, `--out file.ppm`, `--no-output`, `--runs N`, `--max-iter M`.
-
-### Hybrid MPI + CUDA
-
-```bash
 mpirun -np 2 --oversubscribe ./build/mandelbrot_mpi_cuda --shallow
 ```
 
-**Caveat:** because the CUDA function renders the entire image in one kernel launch, each rank computes the full image on the shared GPU and keeps only its row strip. This isolates the MPI orchestration cost; it does not produce a speedup on a single-GPU machine. On multi-GPU clusters, `cudaSetDevice(rank % deviceCount)` would give real gains. See the source comments and `docs/report_partA.md` §3.4.
+Common flags: `--shallow` / `--deep`, `--width W`, `--height H`, `--max-iter M`, `--runs N`, `--no-output`, `--out file.ppm`. MPI-specific: `--chunk K`, `--contiguous`. OpenMP-specific: `--threads T`, `--schedule {static|static-16|dynamic-1|dynamic-16|dynamic-64|guided}`.
 
-## Scripts
+## Results
 
-| Script | What it does |
-|---|---|
-| `scripts/run_mpi_strong.sh [view] [W] [H]` | Strong-scaling sweep across 1, 2, 4, 8 ranks |
-| `scripts/run_mpi_imbalance.sh [ranks] [view]` | Compares contiguous vs block-cyclic distributions |
-| `scripts/test_partA.sh` | Full Part A test suite (18 checks) |
-| `scripts/compare_ppm.py a.ppm b.ppm` | Byte-level PPM diff for visual-equivalence checks |
+Headline numbers (RTX 4050 + 16 logical cores, deep view 1920x1080, maxIter=2000, 5 runs):
 
-Examples:
+| Implementation | Avg (ms) | Speedup vs serial |
+|---|---:|---:|
+| serial | 8141 | 1.00x |
+| openmp(2) | 4173 | 1.95x |
+| openmp(4) | 2440 | 3.34x |
+| openmp(8) | 1521 | 5.35x |
+| openmp(16) | 1133 | 7.19x |
+| cuda | 516 | 15.77x |
 
-```bash
-bash scripts/run_mpi_strong.sh --shallow 1920 1080
-bash scripts/run_mpi_imbalance.sh 4 --deep
-bash scripts/test_partA.sh
+MPI strong scaling (shallow view, block-cyclic chunk=8): 1 to 8 ranks gives 5.1x speedup. MPI load imbalance: contiguous 1.36x, block-cyclic 1.04x.
+
+OpenMP schedule comparison at 8 threads (deep view): `static` 1626 ms, `dynamic-16` 1399 ms, `guided` 1354 ms.
+
+Plots and CSVs in `docs/results/`. Full writeup in `docs/report.md`.
+
+## Layout
+
 ```
-
-## Project layout
-
-```
-.
-├── CMakeLists.txt
-├── README.md                          (this file)
-├── plan.md                            (overall combined plan)
-├── plan_partA.md                      (Part A spec — implemented)
-├── plan_partB.md                      (Part B spec — in progress)
-├── include/
-│   ├── mandelbrot.cuh                 (CUDA header)
-│   └── mandelbrot_core.hpp            (shared CPU mirror of the CUDA math)
-├── src/
-│   ├── mandelbrot.cu                  (CUDA kernel)
-│   ├── main.cpp                       (SDL viewer)
-│   ├── benchmark.cpp                  (CPU vs GPU benchmark)
-│   ├── mandelbrot_mpi.cpp             (pure MPI)
-│   └── mandelbrot_mpi_cuda.cpp        (hybrid MPI+CUDA)
-├── scripts/
-│   ├── run_mpi_strong.sh
-│   ├── run_mpi_imbalance.sh
-│   ├── test_partA.sh
-│   └── compare_ppm.py
-└── docs/
-    └── report_partA.md                (Part A results writeup)
+include/   mandelbrot.cuh, mandelbrot_core.hpp
+src/       mandelbrot.cu, main.cpp, benchmark.cpp,
+           mandelbrot_serial.cpp, mandelbrot_omp.cpp,
+           mandelbrot_mpi.cpp, mandelbrot_mpi_cuda.cpp, benchmark_mpi.cpp
+scripts/   run_mpi_strong.sh, run_mpi_imbalance.sh, run_schedule_study.sh,
+           plot_mpi_results.py, plot_partB.py, compare_ppm.py, test_partA.sh
+docs/      report.md, results/
 ```
 
 ## Algorithm
 
-Per-pixel Mandelbrot iteration with:
-- `double` precision throughout the iteration loop
-- Escape radius² = 1e20 (enables smooth coloring)
-- Derivative tracking (`dz = 2·z·dz + 1`) for distance-estimate shading
-- Smooth (continuous) iteration count via log-of-log smoothing
-- Sin-based 4096-color palette
-- Blinn-Phong lighting (azimuth 60°, elevation 50°)
-- Photoshop-style overlay blend
-- Distance-estimate sigmoid for halo softening
-
-The CPU implementations in `mandelbrot_core.hpp` mirror the CUDA math byte-for-byte (validated to ≤1 ULP per byte across a 1.44 MB rendered image).
-
-## For Part B contributors
-
-Read `plan_partB.md` first. The shared header `include/mandelbrot_core.hpp` exposes:
-
-- `mbcore::mandelbrotIterate(cx, cy, maxIter)` → `MandelResult`
-- `mbcore::pixelToComplex(...)`, `smoothIterCount(...)`, `getColor(...)`
-- `mbcore::renderPixel(...)` and `mbcore::renderRowsSerial(...)` — drop-in for serial / OpenMP wrappers
-- View presets: `mbcore::kShallowView`, `mbcore::kDeepView`
-
-Adding an OpenMP version is mostly:
-
-```cpp
-#include "mandelbrot_core.hpp"
-// ...
-#pragma omp parallel for collapse(2) schedule(dynamic, 16)
-for (int y = 0; y < height; y++)
-    for (int x = 0; x < width; x++)
-        mbcore::renderPixel(pixels, x, y, width, height, ...);
-```
-
-See `plan_partB.md` for the full Definition of Done.
+Per-pixel iteration with `double` precision, escape radius squared = 1e20, derivative tracking for distance-estimate shading, log-of-log smooth iteration count, 4096-color sin-based palette, Blinn-Phong lighting, overlay blend. CPU and CUDA paths produce visually equivalent output (SAD under 1 ULP per byte at shallow view; small ULP-scale drift at deep zoom).

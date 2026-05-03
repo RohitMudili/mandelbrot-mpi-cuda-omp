@@ -25,4 +25,14 @@ void computeMandelbrotCUDA(
     ColorTable* colorTable // Color table (optional, NULL for grayscale)
 );
 
+// Release internally-cached device buffers (color table, pixel buffer).
+// Call once before exit. Safe to call multiple times.
+#ifdef __cplusplus
+extern "C" {
+#endif
+void freeMandelbrotCudaResources();
+#ifdef __cplusplus
+}
+#endif
+
 #endif

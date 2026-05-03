@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
 
     if ( !renderer ) {
 		std::cout << "Error creating renderer: " << SDL_GetError() << std::endl;
-		return false;
+		return 1;
 	}
     
     SDL_Texture* texture = SDL_CreateTexture(
@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
 
     if ( !texture ) {
         std::cout << "Error creating texture: " << SDL_GetError() << std::endl;
-        return false;
+        return 1;
     }
 
     // Allocate pixel buffers
@@ -272,10 +272,11 @@ int main(int argc, char* argv[]) {
     }
     delete[] pixels;
     delete[] ssPixels;
+    freeMandelbrotCudaResources();
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    
+
     return 0;
 }

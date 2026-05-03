@@ -16,13 +16,16 @@ include_directories(${SDL2_INCLUDE_DIRS})
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
+# OpenMP — required by Part B targets (benchmark, mandelbrot_omp)
+find_package(OpenMP REQUIRED)
+
 # Add main executable
 add_executable(mandelbrot
     src/main.cpp
     src/mandelbrot.cu
 )
 
-# Add benchmark executable
+# Add benchmark executable (Part B: unified Serial vs OpenMP vs CUDA)
 add_executable(benchmark
     src/benchmark.cpp
     src/mandelbrot.cu
@@ -30,7 +33,7 @@ add_executable(benchmark
 
 # Link libraries
 target_link_libraries(mandelbrot ${SDL2_LIBRARIES})
-target_link_libraries(benchmark)
+target_link_libraries(benchmark PRIVATE OpenMP::OpenMP_CXX)
 
 # CUDA architecture
 set_target_properties(mandelbrot PROPERTIES
@@ -39,6 +42,14 @@ set_target_properties(mandelbrot PROPERTIES
 set_target_properties(benchmark PROPERTIES
     CUDA_ARCHITECTURES "75;86"
 )
+
+# ---- Part B: Serial + OpenMP standalone executables ----
+add_executable(mandelbrot_serial src/mandelbrot_serial.cpp)
+target_include_directories(mandelbrot_serial PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(mandelbrot_omp src/mandelbrot_omp.cpp)
+target_include_directories(mandelbrot_omp PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(mandelbrot_omp PRIVATE OpenMP::OpenMP_CXX)
 
 # ---- Part A: MPI targets (additive — does not touch existing executables) ----
 
@@ -62,5 +73,5 @@ if(MPI_CXX_FOUND)
         CUDA_ARCHITECTURES "75;86"
     )
 else()
-    message(STATUS "MPI not found — skipping mandelbrot_mpi / mandelbrot_mpi_cuda targets")
+    message(STATUS "MPI not found - skipping mandelbrot_mpi / mandelbrot_mpi_cuda targets")
 endif()

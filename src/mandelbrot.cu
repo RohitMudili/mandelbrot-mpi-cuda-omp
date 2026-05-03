@@ -250,6 +250,24 @@ __global__ void mandelbrotKernel(
     }
 }
 
+// Cached device buffers. The color table re-uploaded on every call (48 KB at
+// the default palette size) and the pixel buffer was malloc'd and freed every
+// frame; at 60 FPS that's significant overhead. Both are now reused across
+// calls. freeMandelbrotCudaResources() releases them before exit.
+static float*       g_d_colorTable      = nullptr;
+static int          g_d_colorTableCount = 0;
+static const ColorTable* g_lastTablePtr = nullptr;
+static uint8_t*     g_d_pixels          = nullptr;
+static size_t       g_d_pixelsBytes     = 0;
+
+extern "C" void freeMandelbrotCudaResources() {
+    if (g_d_colorTable) { cudaFree(g_d_colorTable); g_d_colorTable = nullptr; }
+    g_d_colorTableCount = 0;
+    g_lastTablePtr = nullptr;
+    if (g_d_pixels) { cudaFree(g_d_pixels); g_d_pixels = nullptr; }
+    g_d_pixelsBytes = 0;
+}
+
 void computeMandelbrotCUDA(
     uint8_t* pixels,
     int width,
@@ -260,31 +278,43 @@ void computeMandelbrotCUDA(
     int maxIter,
     ColorTable* colorTable
 ) {
-    uint8_t* d_pixels;
-    float* d_colorTable = nullptr;
-    size_t pixelSize = width * height * 4 * sizeof(uint8_t);
-    
-    cudaMalloc(&d_pixels, pixelSize);
-    
+    size_t pixelSize = (size_t)width * height * 4 * sizeof(uint8_t);
+
+    // Reuse the device pixel buffer when possible; only grow.
+    if (pixelSize > g_d_pixelsBytes) {
+        if (g_d_pixels) cudaFree(g_d_pixels);
+        cudaMalloc(&g_d_pixels, pixelSize);
+        g_d_pixelsBytes = pixelSize;
+    }
+
     int numColors = 0;
     float ncycle = 32.0f; // Default cycle value from Python
-    
-    // Copy color table to device if provided
+    float* d_colorTable = nullptr;
+
     if (colorTable != nullptr) {
         numColors = colorTable->numColors;
-        size_t colorSize = numColors * 3 * sizeof(float);
-        cudaMalloc(&d_colorTable, colorSize);
-        cudaMemcpy(d_colorTable, colorTable->colors, colorSize, cudaMemcpyHostToDevice);
+        // Pointer equality is enough — callers hold a stable ColorTable* for
+        // the run.
+        if (colorTable != g_lastTablePtr || numColors != g_d_colorTableCount) {
+            if (g_d_colorTable) cudaFree(g_d_colorTable);
+            size_t colorSize = (size_t)numColors * 3 * sizeof(float);
+            cudaMalloc(&g_d_colorTable, colorSize);
+            cudaMemcpy(g_d_colorTable, colorTable->colors, colorSize,
+                       cudaMemcpyHostToDevice);
+            g_lastTablePtr      = colorTable;
+            g_d_colorTableCount = numColors;
+        }
+        d_colorTable = g_d_colorTable;
     }
-    
+
     dim3 blockDim(16, 16);
     dim3 gridDim(
         (width + blockDim.x - 1) / blockDim.x,
         (height + blockDim.y - 1) / blockDim.y
     );
-    
+
     mandelbrotKernel<<<gridDim, blockDim>>>(
-        d_pixels,
+        g_d_pixels,
         width,
         height,
         centerX,
@@ -298,10 +328,5 @@ void computeMandelbrotCUDA(
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(pixels, d_pixels, pixelSize, cudaMemcpyDeviceToHost);
-
-    cudaFree(d_pixels);
-    if (d_colorTable != nullptr) {
-        cudaFree(d_colorTable);
-    }
+    cudaMemcpy(pixels, g_d_pixels, pixelSize, cudaMemcpyDeviceToHost);
 }

@@ -25,10 +25,25 @@ done
 # -----------------------------------------------------------
 hdr "2. Untouched-files invariant"
 # -----------------------------------------------------------
-SRC=/mnt/c/CODE/mandelbrot-cuda-main/mandelbrot-cuda-main
+# Compare against the original blobs as recorded in git history.
+# The "original" reference is the very first commit that introduced the file.
+# Falls back to comparing against HEAD if rev-list fails.
 for f in src/mandelbrot.cu include/mandelbrot.cuh src/main.cpp src/benchmark.cpp; do
-    if cmp -s "$SRC/$f" "$f"; then ok "$f unchanged from original"
-    else fail "$f DIFFERS from original"; fi
+    FIRST_COMMIT=$(git log --diff-filter=A --reverse --format=%H -- "$f" 2>/dev/null | head -1)
+    REF_REV="$FIRST_COMMIT"
+    if [ -z "$REF_REV" ] || ! git cat-file -e "$REF_REV:$f" 2>/dev/null; then
+        REF_REV="HEAD"
+    fi
+    if ! git cat-file -e "$REF_REV:$f" 2>/dev/null; then
+        fail "$f could not resolve original via git (no reference available)"
+        continue
+    fi
+    # Strip CR from both sides; Windows checkout has CRLF, git blob may not.
+    if diff -q <(git show "$REF_REV:$f" | tr -d '\r') <(tr -d '\r' < "$f") > /dev/null 2>&1; then
+        ok "$f unchanged from original (git $REF_REV)"
+    else
+        fail "$f DIFFERS from original (git $REF_REV)"
+    fi
 done
 
 # -----------------------------------------------------------

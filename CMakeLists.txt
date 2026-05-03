@@ -48,6 +48,10 @@ if(MPI_CXX_FOUND)
     target_link_libraries(mandelbrot_mpi PRIVATE MPI::MPI_CXX)
     target_include_directories(mandelbrot_mpi PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
+    add_executable(benchmark_mpi src/benchmark_mpi.cpp)
+    target_link_libraries(benchmark_mpi PRIVATE MPI::MPI_CXX)
+    target_include_directories(benchmark_mpi PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
     add_executable(mandelbrot_mpi_cuda
         src/mandelbrot_mpi_cuda.cpp
         src/mandelbrot.cu
